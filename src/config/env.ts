@@ -8,6 +8,13 @@ const getEnvVar = (name: string): string => {
   const value = process.env[name] || import.meta.env[name];
   if (!value) {
     console.warn(`Environment variable ${name} is not set`);
+    console.log('Environment details:', {
+      variableName: name,
+      processEnvKeys: Object.keys(process.env),
+      importMetaEnvKeys: Object.keys(import.meta.env),
+      processEnvValue: process.env[name]?.substring(0, 4) + '...',
+      importMetaEnvValue: import.meta.env[name]?.substring(0, 4) + '...'
+    });
   }
   return value || '';
 };
