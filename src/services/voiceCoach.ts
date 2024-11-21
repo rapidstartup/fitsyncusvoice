@@ -21,6 +21,68 @@ type ActionHandler = (action: string) => void;
 type ConversationUpdateHandler = (history: ConversationEntry[]) => void;
 type VoiceActivityHandler = (isActive: boolean) => void;
 
+interface WebSocketMessage {
+  type: string;
+  session?: {
+    id?: string;
+    tools?: Tool[];
+    voice?: string;
+    instructions?: string;
+    input_audio_transcription?: boolean;
+    turn_detection?: string;
+  };
+  conversation?: {
+    id: string;
+  };
+  item?: {
+    type: string;
+    role?: string;
+    content?: Array<{
+      type: string;
+      text: string;
+    }>;
+    name?: string;
+    arguments?: string;
+    call_id?: string;
+  };
+  error?: {
+    code: string;
+    message: string;
+  };
+  response?: {
+    modalities: string[];
+    instructions: string;
+  };
+  name?: string;
+  arguments?: string;
+  call_id?: string;
+  response_id?: string;
+  item_id?: string;
+  output_index?: number;
+}
+
+interface Tool {
+  name: string;
+  description: string;
+  parameters: {
+    type: string;
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+interface FunctionCallItem {
+  name: string;
+  arguments: string;
+  call_id?: string;
+}
+
+interface FunctionCallArguments {
+  name: string;
+  arguments: string;
+  call_id?: string;
+}
+
 export class VoiceCoach {
   private ws: WebSocket | null = null;
   private mediaRecorder: MediaRecorder | null = null;
@@ -117,12 +179,6 @@ export class VoiceCoach {
 
   updateWorkoutState(state: WorkoutState) {
     this.currentWorkoutState = state;
-    const statePrompt = `Current movement: ${state.name}. ${
-      state.repsCompleted ? `Completed ${state.repsCompleted} reps.` : ''
-    } ${
-      state.timePerRep ? `Average time per rep: ${state.timePerRep.toFixed(2)}s.` : ''
-    }`;
-    
     this.addToConversation({
       timestamp: new Date(),
       type: 'coach',
@@ -149,18 +205,13 @@ export class VoiceCoach {
       try {
         const url = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01`;
         
-        this.ws = new WebSocket(url, {
-          headers: {
-            'Authorization': `Bearer ${config.openai.apiKey}`,
-            'OpenAI-Beta': 'realtime=v1'
-          }
-        });
-
+        this.ws = new WebSocket(url);
+        
         this.ws.onopen = () => {
           this.sendMessage({
             type: 'session.update',
             session: {
-              tools: this.tools,
+              tools: this.tools as Tool[],
               voice: 'onyx',
               instructions: COACH_PROMPT,
               input_audio_transcription: true,
@@ -205,14 +256,14 @@ export class VoiceCoach {
     });
   }
 
-  private handleWebSocketMessage(data: any) {
+  private handleWebSocketMessage(data: WebSocketMessage) {
     switch (data.type) {
       case 'session.created':
-        console.log('Session created:', data.session.id);
+        console.log('Session created:', data.session?.id);
         break;
 
       case 'conversation.created':
-        console.log('Conversation created:', data.conversation.id);
+        console.log('Conversation created:', data.conversation?.id);
         break;
 
       case 'input_audio_buffer.speech_started':
@@ -225,20 +276,32 @@ export class VoiceCoach {
         break;
 
       case 'conversation.item.created':
-        if (data.item.type === 'message' && data.item.role === 'assistant') {
-          const message = data.item.content[0]?.text || '';
+        if (data.item?.type === 'message' && data.item?.role === 'assistant') {
+          const content = data.item.content || [];
+          const message = content[0]?.text || '';
           this.addToConversation({
             timestamp: new Date(),
             type: 'coach',
             message
           });
-        } else if (data.item.type === 'function_call') {
-          this.handleFunctionCall(data.item);
+        } else if (data.item?.type === 'function_call' && data.item.name && data.item.arguments) {
+          this.handleFunctionCall({
+            name: data.item.name,
+            arguments: data.item.arguments,
+            call_id: data.item.call_id
+          });
         }
         break;
 
       case 'response.function_call_arguments.done':
-        this.handleFunctionCallArguments(data);
+        if ('name' in data && 'arguments' in data && 
+            typeof data.name === 'string' && typeof data.arguments === 'string') {
+          this.handleFunctionCallArguments({
+            name: data.name,
+            arguments: data.arguments,
+            call_id: data.call_id
+          });
+        }
         break;
 
       case 'error':
@@ -311,7 +374,7 @@ export class VoiceCoach {
     }
   }
 
-  private handleFunctionCall(item: any) {
+  private handleFunctionCall(item: FunctionCallItem) {
     const { name, arguments: args } = item;
     let action = '';
 
@@ -328,7 +391,7 @@ export class VoiceCoach {
       case 'end_workout':
         action = 'END_WORKOUT';
         break;
-      case 'music_control':
+      case 'music_control': {
         const parsedArgs = JSON.parse(args);
         switch (parsedArgs.action) {
           case 'play':
@@ -348,6 +411,7 @@ export class VoiceCoach {
             break;
         }
         break;
+      }
     }
 
     if (action && this.onWorkoutAction) {
@@ -355,7 +419,7 @@ export class VoiceCoach {
     }
   }
 
-  private handleFunctionCallArguments(data: any) {
+  private handleFunctionCallArguments(data: FunctionCallArguments) {
     const { name, arguments: args } = data;
     this.handleFunctionCall({ name, arguments: args });
   }
@@ -506,7 +570,7 @@ export class VoiceCoach {
     }
   }
 
-  private sendMessage(message: any) {
+  private sendMessage(message: WebSocketMessage) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     }
