@@ -205,11 +205,18 @@ export class VoiceCoach {
 
     return new Promise((resolve, reject) => {
       try {
-        const url = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01&authorization=${encodeURIComponent(`Bearer ${config.openai.apiKey}`)}`;
+        const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
         
-        this.ws = new WebSocket(url);
+        const headers = {
+          'Authorization': `Bearer ${config.openai.apiKey}`,
+          'Content-Type': 'application/json'
+        };
+
+        this.ws = new WebSocket(url, ['authorization', JSON.stringify(headers)]);
         
         this.ws.onopen = () => {
+          console.log('WebSocket connected, sending session update...');
+          
           this.sendMessage({
             type: 'session.update',
             session: {
@@ -235,6 +242,7 @@ export class VoiceCoach {
         this.ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data.toString());
+            console.log('WebSocket message received:', data);
             this.handleWebSocketMessage(data);
           } catch (error) {
             console.error('Error parsing WebSocket message:', error);
@@ -247,7 +255,8 @@ export class VoiceCoach {
           reject(error);
         };
 
-        this.ws.onclose = () => {
+        this.ws.onclose = (event) => {
+          console.log('WebSocket closed:', event);
           this.handleWebSocketClose();
         };
 
@@ -574,7 +583,10 @@ export class VoiceCoach {
 
   private sendMessage(message: WebSocketMessage) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log('Sending WebSocket message:', message);
       this.ws.send(JSON.stringify(message));
+    } else {
+      console.error('WebSocket not ready, message not sent:', message);
     }
   }
 }
