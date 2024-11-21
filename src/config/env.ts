@@ -1,10 +1,29 @@
+console.log('Environment check:', {
+  processEnv: !!process.env.VITE_OPENAI_API_KEY,
+  metaEnv: !!import.meta.env.VITE_OPENAI_API_KEY,
+  combinedKey: !!(process.env.VITE_OPENAI_API_KEY || import.meta.env.VITE_OPENAI_API_KEY),
+});
+
+const getEnvVar = (name: string): string => {
+  const value = process.env[name] || import.meta.env[name];
+  if (!value) {
+    console.warn(`Environment variable ${name} is not set`);
+  }
+  return value || '';
+};
+
 export const config = {
   openai: {
-    apiKey: process.env.VITE_OPENAI_API_KEY || import.meta.env.VITE_OPENAI_API_KEY || '',
+    apiKey: getEnvVar('VITE_OPENAI_API_KEY'),
   },
   spotify: {
-    clientId: process.env.VITE_SPOTIFY_CLIENT_ID || import.meta.env.VITE_SPOTIFY_CLIENT_ID || '',
-    clientSecret: process.env.VITE_SPOTIFY_CLIENT_SECRET || import.meta.env.VITE_SPOTIFY_CLIENT_SECRET || '',
+    clientId: getEnvVar('VITE_SPOTIFY_CLIENT_ID'),
+    clientSecret: getEnvVar('VITE_SPOTIFY_CLIENT_SECRET'),
     redirectUri: 'https://fitsyncusvoice.vercel.app/callback',
   },
 } as const;
+
+// Add this debug log in development
+if (import.meta.env.DEV) {
+  console.log('OpenAI API Key exists:', !!config.openai.apiKey);
+}

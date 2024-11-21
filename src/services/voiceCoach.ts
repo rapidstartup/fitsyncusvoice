@@ -198,7 +198,8 @@ export class VoiceCoach {
 
   private async connectWebSocket(): Promise<void> {
     if (!config.openai.apiKey) {
-      throw new Error('OpenAI API key is missing');
+      console.error('OpenAI API key is missing. Please check your environment variables.');
+      throw new Error('OpenAI API key is missing. Please check your environment configuration.');
     }
 
     return new Promise((resolve, reject) => {
