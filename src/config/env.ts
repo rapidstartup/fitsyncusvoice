@@ -1,10 +1,10 @@
 export const config = {
   openai: {
-    apiKey: import.meta.env.VITE_OPENAI_API_KEY || '',
+    apiKey: process.env.VITE_OPENAI_API_KEY || import.meta.env.VITE_OPENAI_API_KEY || '',
   },
   spotify: {
-    clientId: import.meta.env.VITE_SPOTIFY_CLIENT_ID || '',
-    clientSecret: import.meta.env.VITE_SPOTIFY_CLIENT_SECRET || '',
-    redirectUri: 'https://bolt.new/callback',
+    clientId: process.env.VITE_SPOTIFY_CLIENT_ID || import.meta.env.VITE_SPOTIFY_CLIENT_ID || '',
+    clientSecret: process.env.VITE_SPOTIFY_CLIENT_SECRET || import.meta.env.VITE_SPOTIFY_CLIENT_SECRET || '',
+    redirectUri: 'https://fitsyncusvoice.vercel.app/callback',
   },
 } as const;
