@@ -214,14 +214,8 @@ export class VoiceCoach {
 
     return new Promise((resolve, reject) => {
       try {
-        const url = `wss://api.openai.com/v1/realtime/assistants?api-key=${encodeURIComponent(config.openai.apiKey)}`;
-        
-        this.ws = new WebSocket(url, {
-          headers: {
-            'Authorization': `Bearer ${config.openai.apiKey}`,
-            'Content-Type': 'application/json'
-          }
-        });
+        const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+        this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
           console.log('WebSocket connected');
@@ -242,11 +236,6 @@ export class VoiceCoach {
           try {
             const data = JSON.parse(event.data.toString());
             console.log('WebSocket message received:', data);
-            
-            if (data.type === 'error') {
-              console.error('WebSocket error response:', data.error);
-            }
-            
             this.handleWebSocketMessage(data);
           } catch (error) {
             console.error('Error parsing WebSocket message:', error);
@@ -261,9 +250,6 @@ export class VoiceCoach {
 
         this.ws.onclose = (event) => {
           console.log('WebSocket closed:', event);
-          if (event.code === 3000) {
-            console.error('Authentication failed. Check API key and permissions.');
-          }
           this.handleWebSocketClose();
         };
 
