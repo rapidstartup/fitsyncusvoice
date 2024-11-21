@@ -59,6 +59,7 @@ interface WebSocketMessage {
   response_id?: string;
   item_id?: string;
   output_index?: number;
+  authorization?: string;
 }
 
 interface Tool {

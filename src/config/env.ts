@@ -26,7 +26,9 @@ export const config = {
   spotify: {
     clientId: getEnvVar('VITE_SPOTIFY_CLIENT_ID'),
     clientSecret: getEnvVar('VITE_SPOTIFY_CLIENT_SECRET'),
-    redirectUri: 'https://fitsyncusvoice.vercel.app/callback',
+    redirectUri: import.meta.env.DEV 
+      ? 'http://localhost:5173/callback'
+      : 'https://fitsyncusvoice.vercel.app/callback',
   },
 } as const;
 
