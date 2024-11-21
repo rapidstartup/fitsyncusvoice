@@ -23,6 +23,15 @@ type VoiceActivityHandler = (isActive: boolean) => void;
 
 interface WebSocketMessage {
   type: string;
+  data?: {
+    model?: string;
+    stream?: boolean;
+    tools?: Tool[];
+    voice?: string;
+    instructions?: string;
+    input_audio_transcription?: boolean;
+    turn_detection?: string;
+  };
   session?: {
     id?: string;
     tools?: Tool[];
@@ -59,7 +68,6 @@ interface WebSocketMessage {
   response_id?: string;
   item_id?: string;
   output_index?: number;
-  authorization?: string;
 }
 
 interface Tool {
@@ -205,29 +213,32 @@ export class VoiceCoach {
 
     return new Promise((resolve, reject) => {
       try {
-        const url = `wss://api.openai.com/v1/realtime/v1/audio?authorization=${encodeURIComponent(`Bearer ${config.openai.apiKey}`)}&model=gpt-4o-realtime-preview`;
+        const url = 'wss://api.openai.com/v1/audio/speech';
         
-        this.ws = new WebSocket(url);
+        const headers = {
+          'Authorization': `Bearer ${config.openai.apiKey}`,
+          'Content-Type': 'application/json',
+          'OpenAI-Beta': 'assistants=v1'
+        };
+
+        this.ws = new WebSocket(url, {
+          headers,
+          followRedirects: true
+        });
         
         this.ws.onopen = () => {
           console.log('WebSocket connected, sending session update...');
           
           this.sendMessage({
-            type: 'session.update',
-            session: {
-              tools: this.tools as Tool[],
+            type: 'config',
+            data: {
+              model: 'gpt-4',
+              stream: true,
+              tools: this.tools,
               voice: 'onyx',
               instructions: COACH_PROMPT,
               input_audio_transcription: true,
               turn_detection: 'server_vad'
-            }
-          });
-
-          this.sendMessage({
-            type: 'response.create',
-            response: {
-              modalities: ['text', 'audio'],
-              instructions: COACH_PROMPT
             }
           });
 
@@ -246,12 +257,23 @@ export class VoiceCoach {
 
         this.ws.onerror = (error) => {
           console.error('WebSocket error:', error);
+          if (error instanceof Event && error.target instanceof WebSocket) {
+            console.log('WebSocket state:', {
+              readyState: error.target.readyState,
+              url: error.target.url,
+              bufferedAmount: error.target.bufferedAmount
+            });
+          }
           this.handleWebSocketError();
           reject(error);
         };
 
         this.ws.onclose = (event) => {
-          console.log('WebSocket closed:', event);
+          console.log('WebSocket closed:', {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean
+          });
           this.handleWebSocketClose();
         };
 
