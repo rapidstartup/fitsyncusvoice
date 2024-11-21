@@ -205,39 +205,31 @@ export class VoiceCoach {
 
     return new Promise((resolve, reject) => {
       try {
-        const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
+        const url = `wss://api.openai.com/v1/realtime/v1/audio?authorization=${encodeURIComponent(`Bearer ${config.openai.apiKey}`)}&model=gpt-4o-realtime-preview`;
         
         this.ws = new WebSocket(url);
         
         this.ws.onopen = () => {
-          console.log('WebSocket connected, sending authorization...');
+          console.log('WebSocket connected, sending session update...');
           
           this.sendMessage({
-            type: 'authorization',
-            authorization: `Bearer ${config.openai.apiKey}`
+            type: 'session.update',
+            session: {
+              tools: this.tools as Tool[],
+              voice: 'onyx',
+              instructions: COACH_PROMPT,
+              input_audio_transcription: true,
+              turn_detection: 'server_vad'
+            }
           });
 
-          setTimeout(() => {
-            console.log('Sending session update...');
-            this.sendMessage({
-              type: 'session.update',
-              session: {
-                tools: this.tools as Tool[],
-                voice: 'onyx',
-                instructions: COACH_PROMPT,
-                input_audio_transcription: true,
-                turn_detection: 'server_vad'
-              }
-            });
-
-            this.sendMessage({
-              type: 'response.create',
-              response: {
-                modalities: ['text', 'audio'],
-                instructions: COACH_PROMPT
-              }
-            });
-          }, 100);
+          this.sendMessage({
+            type: 'response.create',
+            response: {
+              modalities: ['text', 'audio'],
+              instructions: COACH_PROMPT
+            }
+          });
 
           resolve();
         };
