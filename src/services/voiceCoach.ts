@@ -205,14 +205,9 @@ export class VoiceCoach {
 
     return new Promise((resolve, reject) => {
       try {
-        const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
+        const url = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01&token=${encodeURIComponent(config.openai.apiKey)}`;
         
-        const headers = {
-          'Authorization': `Bearer ${config.openai.apiKey}`,
-          'Content-Type': 'application/json'
-        };
-
-        this.ws = new WebSocket(url, ['authorization', JSON.stringify(headers)]);
+        this.ws = new WebSocket(url);
         
         this.ws.onopen = () => {
           console.log('WebSocket connected, sending session update...');
