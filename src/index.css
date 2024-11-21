@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gradient-to-br from-purple-600 via-purple-700 to-purple-800;
+  min-height: 100vh;
+}
+
+.glass-card {
+  @apply backdrop-blur-xl bg-white/10 border border-white/20 shadow-xl;
+}
+
+.glass-button {
+  @apply backdrop-blur-md bg-white/20 hover:bg-white/30 transition-all duration-300 border border-white/20 shadow-lg;
+}
+
+.glass-modal {
+  @apply backdrop-blur-2xl bg-purple-900/40 border border-white/20 shadow-2xl;
+}
