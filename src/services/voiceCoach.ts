@@ -205,31 +205,39 @@ export class VoiceCoach {
 
     return new Promise((resolve, reject) => {
       try {
-        const url = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01&token=${encodeURIComponent(config.openai.apiKey)}`;
+        const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
         
         this.ws = new WebSocket(url);
         
         this.ws.onopen = () => {
-          console.log('WebSocket connected, sending session update...');
+          console.log('WebSocket connected, sending authorization...');
           
           this.sendMessage({
-            type: 'session.update',
-            session: {
-              tools: this.tools as Tool[],
-              voice: 'onyx',
-              instructions: COACH_PROMPT,
-              input_audio_transcription: true,
-              turn_detection: 'server_vad'
-            }
+            type: 'authorization',
+            authorization: `Bearer ${config.openai.apiKey}`
           });
 
-          this.sendMessage({
-            type: 'response.create',
-            response: {
-              modalities: ['text', 'audio'],
-              instructions: COACH_PROMPT
-            }
-          });
+          setTimeout(() => {
+            console.log('Sending session update...');
+            this.sendMessage({
+              type: 'session.update',
+              session: {
+                tools: this.tools as Tool[],
+                voice: 'onyx',
+                instructions: COACH_PROMPT,
+                input_audio_transcription: true,
+                turn_detection: 'server_vad'
+              }
+            });
+
+            this.sendMessage({
+              type: 'response.create',
+              response: {
+                modalities: ['text', 'audio'],
+                instructions: COACH_PROMPT
+              }
+            });
+          }, 100);
 
           resolve();
         };
