@@ -1,16 +1,14 @@
 import { DB } from '@vlcn.io/crsqlite-wasm';
-import wasmUrl from '@vlcn.io/crsqlite-wasm/crsqlite.wasm?url';
 
 let db: DB | null = null;
 
 export async function initDatabase() {
   if (db) return db;
-
   const sqlite = await import('@vlcn.io/crsqlite-wasm');
-  await sqlite.default.init(wasmUrl);
-  
-  db = await sqlite.default.open(':memory:');
-  
+  const SQL = await sqlite.default();
+  db = await SQL.open(':memory:');
+  if (!db) throw new Error('Failed to initialize database');
+
   // Create tables
   await db.exec(`
     CREATE TABLE IF NOT EXISTS workouts (
@@ -42,6 +40,10 @@ export async function initDatabase() {
   return db;
 }
 
+interface DBExecResult {
+  lastInsertRowId: number;
+}
+
 export async function logWorkout(data: {
   workoutName: string;
   durationSeconds: number;
@@ -53,24 +55,30 @@ export async function logWorkout(data: {
   }>;
 }) {
   const database = await initDatabase();
+  if (!database) throw new Error('Database not initialized');
   
-  await database.transaction(async () => {
-    // Log the workout
+  await database.exec('BEGIN TRANSACTION');
+  
+  try {
     const result = await database.exec(`
       INSERT INTO workouts (workout_name, duration_seconds, total_reps)
       VALUES (?, ?, ?)
-    `, [data.workoutName, data.durationSeconds, data.totalReps]);
+    `, [data.workoutName, data.durationSeconds, data.totalReps]) as unknown as DBExecResult;
     
     const workoutId = result.lastInsertRowId;
     
-    // Log individual movements
     for (const movement of data.movements) {
       await database.exec(`
         INSERT INTO movement_logs (workout_id, movement_name, reps_completed, time_per_rep)
         VALUES (?, ?, ?, ?)
       `, [workoutId, movement.name, movement.repsCompleted, movement.timePerRep || null]);
     }
-  });
+    
+    await database.exec('COMMIT');
+  } catch (error) {
+    await database.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 export async function getWorkoutHistory(limit = 10) {

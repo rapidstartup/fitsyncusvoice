@@ -17,7 +17,7 @@ const WORKOUT_PLAYLISTS = {
 };
 
 export interface SpotifyTrack {
-  id: string;
+  id: string | null;
   name: string;
   artists: string[];
   duration_ms: number;
@@ -32,6 +32,16 @@ type PlayerState = {
 };
 
 type PlayerStateCallback = (state: PlayerState) => void;
+
+interface SpotifyPlaylistTrackItem {
+  track: {
+    id: string;
+    name: string;
+    artists: Array<{ name: string }>;
+    duration_ms: number;
+    uri: string;
+  };
+}
 
 class SpotifyService {
   private accessToken: string | null = null;
@@ -165,12 +175,12 @@ class SpotifyService {
 
     const data = await response.json();
     const tracks = await Promise.all(
-      data.items.map(async (item: any) => {
+      data.items.map(async (item: SpotifyPlaylistTrackItem) => {
         const tempo = await this.getTrackTempo(item.track.id);
         return {
           id: item.track.id,
           name: item.track.name,
-          artists: item.track.artists.map((a: any) => a.name),
+          artists: item.track.artists.map((a: { name: string }) => a.name),
           duration_ms: item.track.duration_ms,
           tempo,
           uri: item.track.uri

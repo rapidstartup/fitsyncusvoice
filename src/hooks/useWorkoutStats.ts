@@ -1,6 +1,12 @@
 import { useState, useCallback } from 'react';
 import { logWorkout, getWorkoutHistory, getPersonalRecords, setPersonalRecord } from '../services/database';
 
+// Add interfaces for the record types
+interface PersonalRecord {
+  record_type: string;
+  value: number;
+}
+
 export function useWorkoutStats() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +27,7 @@ export function useWorkoutStats() {
       await logWorkout(workoutData);
       
       // Check for potential PRs
-      const existingRecords = await getPersonalRecords(workoutData.workoutName);
+      const existingRecords = await getPersonalRecords(workoutData.workoutName) as PersonalRecord[];
       const timeRecord = existingRecords.find(r => r.record_type === 'time');
       
       if (!timeRecord || workoutData.durationSeconds < timeRecord.value) {

@@ -32,6 +32,7 @@ interface WebSocketMessage {
     input_audio_transcription?: boolean;
     turn_detection?: string;
   };
+  authorization?: string;
   session?: {
     id?: string;
     tools?: Tool[];
@@ -188,7 +189,7 @@ export class VoiceCoach {
 
   updateWorkoutState(state: WorkoutState) {
     this.currentWorkoutState = state;
-    this.addToConversation({
+    this.updateConversation({
       timestamp: new Date(),
       type: 'coach',
       message: this.generateWorkoutFeedback(state)
@@ -207,41 +208,33 @@ export class VoiceCoach {
 
   private async connectWebSocket(): Promise<void> {
     if (!config.openai.apiKey) {
-      console.error('OpenAI API key is missing. Please check your environment variables.');
-      throw new Error('OpenAI API key is missing. Please check your environment configuration.');
+      console.error('OpenAI API key is missing');
+      throw new Error('OpenAI API key is missing');
     }
 
     return new Promise((resolve, reject) => {
       try {
-        const url = 'wss://api.openai.com/v1/audio/speech';
+        const url = `wss://api.openai.com/v1/realtime/assistants?api-key=${encodeURIComponent(config.openai.apiKey)}`;
         
-        const headers = {
-          'Authorization': `Bearer ${config.openai.apiKey}`,
-          'Content-Type': 'application/json',
-          'OpenAI-Beta': 'assistants=v1'
-        };
-
         this.ws = new WebSocket(url, {
-          headers,
-          followRedirects: true
+          headers: {
+            'Authorization': `Bearer ${config.openai.apiKey}`,
+            'Content-Type': 'application/json'
+          }
         });
-        
+
         this.ws.onopen = () => {
-          console.log('WebSocket connected, sending session update...');
-          
+          console.log('WebSocket connected');
           this.sendMessage({
-            type: 'config',
-            data: {
-              model: 'gpt-4',
-              stream: true,
-              tools: this.tools,
+            type: 'session.create',
+            session: {
+              tools: this.tools as Tool[],
               voice: 'onyx',
               instructions: COACH_PROMPT,
               input_audio_transcription: true,
               turn_detection: 'server_vad'
             }
           });
-
           resolve();
         };
 
@@ -249,6 +242,11 @@ export class VoiceCoach {
           try {
             const data = JSON.parse(event.data.toString());
             console.log('WebSocket message received:', data);
+            
+            if (data.type === 'error') {
+              console.error('WebSocket error response:', data.error);
+            }
+            
             this.handleWebSocketMessage(data);
           } catch (error) {
             console.error('Error parsing WebSocket message:', error);
@@ -257,23 +255,15 @@ export class VoiceCoach {
 
         this.ws.onerror = (error) => {
           console.error('WebSocket error:', error);
-          if (error instanceof Event && error.target instanceof WebSocket) {
-            console.log('WebSocket state:', {
-              readyState: error.target.readyState,
-              url: error.target.url,
-              bufferedAmount: error.target.bufferedAmount
-            });
-          }
           this.handleWebSocketError();
           reject(error);
         };
 
         this.ws.onclose = (event) => {
-          console.log('WebSocket closed:', {
-            code: event.code,
-            reason: event.reason,
-            wasClean: event.wasClean
-          });
+          console.log('WebSocket closed:', event);
+          if (event.code === 3000) {
+            console.error('Authentication failed. Check API key and permissions.');
+          }
           this.handleWebSocketClose();
         };
 
@@ -282,6 +272,25 @@ export class VoiceCoach {
         reject(error);
       }
     });
+  }
+
+  private sendMessage(message: WebSocketMessage) {
+    if (!this.ws) {
+      console.error('WebSocket instance not created');
+      return;
+    }
+
+    if (this.ws.readyState !== WebSocket.OPEN) {
+      console.error('WebSocket not ready. Current state:', this.ws.readyState);
+      return;
+    }
+
+    try {
+      console.log('Sending WebSocket message:', message);
+      this.ws.send(JSON.stringify(message));
+    } catch (error) {
+      console.error('Error sending WebSocket message:', error);
+    }
   }
 
   private handleWebSocketMessage(data: WebSocketMessage) {
@@ -307,7 +316,7 @@ export class VoiceCoach {
         if (data.item?.type === 'message' && data.item?.role === 'assistant') {
           const content = data.item.content || [];
           const message = content[0]?.text || '';
-          this.addToConversation({
+          this.updateConversation({
             timestamp: new Date(),
             type: 'coach',
             message
@@ -366,7 +375,7 @@ export class VoiceCoach {
       const transcription = data.text.trim();
 
       if (transcription) {
-        this.addToConversation({
+        this.updateConversation({
           timestamp: new Date(),
           type: 'user',
           message: transcription
@@ -394,7 +403,7 @@ export class VoiceCoach {
       }
     } catch (error) {
       console.error('Error processing audio:', error);
-      this.addToConversation({
+      this.updateConversation({
         timestamp: new Date(),
         type: 'coach',
         message: "Sorry, I couldn't process that. Please try again."
@@ -453,7 +462,7 @@ export class VoiceCoach {
   }
 
   private handleWebSocketError() {
-    this.addToConversation({
+    this.updateConversation({
       timestamp: new Date(),
       type: 'coach',
       message: "I'm having trouble connecting. Please try again."
@@ -461,7 +470,7 @@ export class VoiceCoach {
   }
 
   private handleWebSocketClose() {
-    this.addToConversation({
+    this.updateConversation({
       timestamp: new Date(),
       type: 'coach',
       message: "Connection closed. Please restart voice mode if you'd like to continue."
@@ -483,7 +492,7 @@ export class VoiceCoach {
       
       this.analyzer.getByteFrequencyData(dataArray);
       const average = dataArray.reduce((a, b) => a + b) / bufferLength;
-      const isActive = average > 20; // Adjusted threshold for better sensitivity
+      const isActive = average > 20;
 
       if (isActive) {
         this.lastVoiceDetectionTime = Date.now();
@@ -496,114 +505,67 @@ export class VoiceCoach {
     this.voiceDetectionInterval = window.setInterval(checkVoiceActivity, 100);
   }
 
-  async startListening() {
+  async startListening(): Promise<() => void> {
+    if (this.isListening) {
+      throw new Error('Already listening');
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        } 
-      });
-
-      this.mediaStream = stream;
       await this.connectWebSocket();
-      this.setupVoiceDetection(stream);
-
-      this.mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm'
-      });
-
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.mediaStream = stream;
+      
+      this.mediaRecorder = new MediaRecorder(stream);
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           this.audioChunks.push(event.data);
         }
       };
-
-      this.mediaRecorder.start(1000); // Record in 1-second chunks
+      
+      this.setupVoiceDetection(stream);
+      this.mediaRecorder.start(1000);
       this.isListening = true;
 
-      this.addToConversation({
-        timestamp: new Date(),
-        type: 'coach',
-        message: "Voice mode activated, I am here to help"
-      });
-
-      // Return cleanup function
       return () => {
-        if (this.voiceDetectionInterval) {
-          clearInterval(this.voiceDetectionInterval);
-        }
-        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-          this.mediaRecorder.stop();
-        }
-        if (this.mediaStream) {
-          this.mediaStream.getTracks().forEach(track => track.stop());
-        }
-        if (this.audioContext) {
-          this.audioContext.close();
-        }
-        if (this.ws) {
-          this.ws.close();
-        }
+        this.stopListening();
       };
-
     } catch (error) {
       console.error('Error starting voice recognition:', error);
       throw error;
     }
   }
 
-  private addToConversation(entry: ConversationEntry) {
-    this.conversationHistory.push(entry);
-    this.onConversationUpdate?.(this.conversationHistory);
+  stopListening(): void {
+    if (this.mediaRecorder) {
+      this.mediaRecorder.stop();
+    }
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach(track => track.stop());
+    }
+    if (this.ws) {
+      this.ws.close();
+    }
+    if (this.voiceDetectionInterval) {
+      clearInterval(this.voiceDetectionInterval);
+    }
+    if (this.audioContext) {
+      this.audioContext.close();
+    }
     
-    if (entry.action && this.onWorkoutAction) {
-      this.onWorkoutAction(entry.action);
-    }
+    this.isListening = false;
+    this.mediaRecorder = null;
+    this.mediaStream = null;
+    this.ws = null;
+    this.voiceDetectionInterval = null;
+    this.audioContext = null;
+    this.analyzer = null;
   }
 
-  stopListening() {
-    if (this.isListening) {
-      this.isListening = false;
-      
-      if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-        this.mediaRecorder.stop();
-      }
-      
-      if (this.mediaStream) {
-        this.mediaStream.getTracks().forEach(track => track.stop());
-      }
-      
-      if (this.audioContext) {
-        this.audioContext.close();
-      }
-      
-      if (this.voiceDetectionInterval) {
-        clearInterval(this.voiceDetectionInterval);
-      }
-
-      if (this.ws) {
-        this.ws.close();
-      }
-
-      this.onVoiceActivity?.(false);
-      this.audioChunks = [];
-
-      this.addToConversation({
-        timestamp: new Date(),
-        type: 'coach',
-        message: "Voice mode deactivated"
-      });
-    }
-  }
-
-  private sendMessage(message: WebSocketMessage) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('Sending WebSocket message:', message);
-      this.ws.send(JSON.stringify(message));
-    } else {
-      console.error('WebSocket not ready, message not sent:', message);
+  private updateConversation(entry: ConversationEntry) {
+    this.conversationHistory = [...this.conversationHistory, entry];
+    if (this.onConversationUpdate) {
+      this.onConversationUpdate(this.conversationHistory);
     }
   }
 }
